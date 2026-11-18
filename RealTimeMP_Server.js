@@ -867,4 +867,216 @@ function handleMessage(player, raw) {
   }
 
   // ----------------------------------------------------------
-  
+  // CHAT
+  // ----------------------------------------------------------
+
+  else if (t === "chat") {
+    if (player.room) {
+      broadcastAll(player.room, {
+        type: "chat",
+        senderId: player.id,
+        senderName: player.name,
+        text: String(msg.text || "").slice(0, 512)
+      });
+    }
+  }
+
+  // ----------------------------------------------------------
+  // ROOM VARIABLES
+  // ----------------------------------------------------------
+
+  else if (t === "room_variable") {
+
+    if (!player.room) return;
+
+    const room = rooms.get(player.room);
+    if (!room) return;
+
+    const key = String(msg.key || "").slice(0, 64);
+    const value = msg.value !== undefined ? msg.value : "";
+
+    room.variables[key] = value;
+
+    broadcastAll(player.room, {
+      type: "room_variable",
+      key,
+      value
+    });
+  }
+
+  // ----------------------------------------------------------
+  // OBJECT SYNC
+  // ----------------------------------------------------------
+
+  else if (t === "object_sync") {
+    if (player.room) {
+      broadcast(player.room, {
+        type: "object_sync",
+        objects: msg.objects || {}
+      }, player.id);
+    }
+  }
+
+  //
+  ----------------------------------------------------------
+  // BULLETS
+  // ----------------------------------------------------------
+
+  else if (t === "bullet_spawn") {
+    if (player.room) {
+      broadcast(player.room, {
+        type: "bullet_spawn",
+        objectName: msg.objectName || "",
+        x: msg.x || 0,
+        y: msg.y || 0,
+        angle: msg.angle || 0,
+        animation: msg.animation || "",
+        senderId: player.id,
+        timestamp: msg.timestamp || Date.now()
+      }, player.id);
+    }
+  }
+
+  // ----------------------------------------------------------
+  ----------------------------------------------------------
+  // LOBBY
+  // ----------------------------------------------------------
+
+  else if (t === "get_lobby") {
+
+    const list = [];
+
+    for (const room of rooms.values()) {
+      if (!room.isPrivate) {
+        list.push({
+          id: room.id,
+          name: room.name,
+          playerCount: room.players.size,
+          maxPlayers: room.maxPlayers,
+          locked: room.password !== ""
+        });
+      }
+    }
+
+    sendTo(player.id, {
+      type: "lobby_list",
+      rooms: list
+    });
+  }
+
+  // ----------------------------------------------------------
+  ----------------------------------------------------------
+  // KICK
+  // ----------------------------------------------------------
+
+  else if (t === "kick") {
+
+    if (!player.room) return;
+
+    const room = rooms.get(player.room);
+
+    if (!room || room.host !== player.id) return;
+
+    const target = players.get(msg.targetId);
+
+    if (!target) return;
+
+    sendTo(target.id, {
+      type: "kicked",
+      reason: String(msg.reason || "").slice(0, 128)
+    });
+
+    removePlayerFromRoom(target);
+
+    if (target.ws.readyState === WebSocket.OPEN) {
+      target.ws.close(1000, "Kicked");
+    }
+  }
+}
+
+// =============================
+// WEBSOCKET SERVER
+// ============================================================
+
+async function startServer() {
+
+  await initDatabase();
+
+  const wss = new WebSocket.Server({
+    port: PORT,
+    maxPayload: MAX_WS_BYTES
+  });
+
+  wss.on("connection", (ws, request) => {
+
+    const playerId = `p${++playerIdCounter}`;
+
+    const player = {
+      id: playerId,
+      name: "Player",
+      room: null,
+      ws,
+      ip: request.socket.remoteAddress || "unknown",
+      accountId: null
+    };
+
+    players.set(playerId, player);
+
+    ws.send(JSON.stringify({
+      type: "welcome",
+      playerId
+    }));
+
+    log(`Player connected: ${playerId}`);
+
+    ws.on("message", (raw) => {
+      handleMessage(player, raw.toString());
+    });
+
+    ws.on("close", () => {
+      removePlayerFromRoom(player);
+      players.delete(playerId);
+      
+      log(`Player disconnected: ${playerId}`);
+    });
+
+    ws.on("error", (error) => {
+      log(`Player error ${playerId}: ${error.message}`);
+    });
+  });
+
+  log(`RealTimeMP running on port ${PORT}`);
+}
+
+startServer().catch((error) => {
+  console.error("SERVER START ERROR:", error);
+  process.exit(1);
+});
+
+// ============================================================
+  // PERIODIC CLEANUP
+// ============================================================
+
+setInterval(async () => {
+
+  const now = Date.now();
+
+  for (const [id, room] of rooms) {
+    if (
+      room.players.size === 0 &&
+      now - room.createdAt > 60 * 60 * 1000
+    ) {
+      rooms.delete(id);
+    }
+  }
+
+  try {
+    await db.query(`
+      DELETE FROM account_sessions
+      WHERE expires_at < NOW()
+    `);
+  } catch (error) {
+    console.error("SESSION CLEANUP ERROR:", error.message);
+  }
+
+}, 5 * 60 * 1000);
