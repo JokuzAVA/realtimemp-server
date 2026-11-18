@@ -23,6 +23,53 @@
 
 const WebSocket = require('ws');
 
+
+const { Pool } = require('pg');
+
+// Conexión con Neon PostgreSQL
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000
+});
+
+// Crear las tablas y comprobar la conexión
+async function initDatabase() {
+  try {
+    await db.query('SELECT NOW()');
+
+    console.log('NEON: Conexión establecida correctamente');
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS accounts (
+        id BIGSERIAL PRIMARY KEY,
+        username VARCHAR(32) UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+
+    await db.query(`
+      CREATE TABLE IF NOT EXISTS saved_games (
+        id BIGSERIAL PRIMARY KEY,
+        account_id BIGINT NOT NULL
+          REFERENCES accounts(id) ON DELETE CASCADE,
+        save_slot VARCHAR(64) NOT NULL DEFAULT 'main',
+        save_data JSONB NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(account_id, save_slot)
+      );
+    `);
+
+    console.log('NEON: Tablas accounts y saved_games listas');
+
+  } catch (error) {
+    console.error('NEON ERROR:', error.message);
+  }
+}
+
+
 // ─── إعدادات ─────────────────────────────────────────────────
 const PORT          = parseInt(process.env.PORT)          || 8080;
 const MAX_ROOMS     = parseInt(process.env.MAX_ROOMS)     || 100;
