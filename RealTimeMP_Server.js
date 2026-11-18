@@ -25,6 +25,8 @@ const WebSocket = require('ws');
 
 const { Pool } = require('pg');
 
+const { installAuthSave } = require('./auth_save');
+
 // Conexión con Neon PostgreSQL
 const db = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -382,6 +384,12 @@ function handleMessage(player, raw) {
         log(`Player ${targetId} kicked from room ${room.id} by host ${player.id}. Reason: ${reason}`);
     }
 }
+
+// NUEVO CÓDIGO: NO BORRAR
+handleMessage = installAuthSave({
+    db: db,
+    originalHandler: handleMessage
+});
 
 // ─── الخادم ──────────────────────────────────────────────────
 const wss = new WebSocket.Server({ port: PORT });
