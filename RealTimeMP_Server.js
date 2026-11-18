@@ -422,6 +422,8 @@ wss.on('connection', (ws) => {
 
 log(`✅ RealTimeMP Server running on port ${PORT}`);
 log(`   Max rooms: ${MAX_ROOMS} | Max players per room: ${MAX_PLAYERS}`);
+// Inicializar la base de datos al arrancar el servidor
+initDatabase();
 
 // ─── تنظيف الغرف القديمة (كل 5 دقائق) ───────────────────────
 setInterval(() => {
