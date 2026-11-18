@@ -6,7 +6,8 @@
     "start": "node RealTimeMP_Server.js"
   },
   "dependencies": {
-  "ws": "^8.18.0",
-  "pg": "^8.13.1"
+    "ws": "^8.18.0",
+    "pg": "^8.13.1",
+    "bcryptjs": "^2.4.3"
   }
 }
